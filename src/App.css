@@ -1,38 +1,52 @@
+.title {
+    font-size: 30px;
+    font-weight: bold;
+    text-align: center;
+}
+.title1 {
+    border-bottom: 1px solid black;
+    padding: 10px;
+}
+.cal {
+}
+.form {
+    width: 600px;
+}
+.result {
+    width: 600px;
+}
+.body {
+    padding: 10px;
+    display: flex;
+    /*background: red;*/
+    align-items: center;
+}
+.total-label {
+    margin-right: 10px;
+}
 .App {
-  text-align: center;
+    font-size: 16px;
+}
+.total-suffix {
+    margin-left: 10px;
 }
 
-.App-logo {
-  height: 40vmin;
-  pointer-events: none;
+.events {
+    list-style: none;
+    margin: 0;
+    padding: 0;
 }
-
-@media (prefers-reduced-motion: no-preference) {
-  .App-logo {
-    animation: App-logo-spin infinite 20s linear;
-  }
+.events .ant-badge-status {
+    overflow: hidden;
+    white-space: nowrap;
+    width: 100%;
+    text-overflow: ellipsis;
+    font-size: 12px;
 }
-
-.App-header {
-  background-color: #282c34;
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  font-size: calc(10px + 2vmin);
-  color: white;
+.notes-month {
+    text-align: center;
+    font-size: 28px;
 }
-
-.App-link {
-  color: #61dafb;
-}
-
-@keyframes App-logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+.notes-month section {
+    font-size: 28px;
 }
