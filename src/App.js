@@ -1,23 +1,61 @@
 import React from 'react';
 import './App.css';
-import 'antd/dist/antd.css'; // or 'antd/dist/antd.less'
-import { Calendar, InputNumber, Table, Badge } from 'antd';
+import 'antd/dist/antd.css';
+import moment from 'moment';
+import {Calendar, InputNumber, Table, Badge, TimePicker, Modal, Form, message} from 'antd';
+import {db} from "./db";
+// import axios from 'axios';
+import holidays from './holiday.json';
 
-function onPanelChange(value, mode) {
-    console.log(value.format('YYYY-MM-DD'), mode);
-}
+const { RangePicker } = TimePicker;
 
 class App extends React.Component {
 
+    formRef = React.createRef();
+    dateFormat = "YYYY-MM-DD";
+    timeFormat = "HH:mm";
+
     constructor(props) {
         super(props);
+        const dateMap = db.read('dateMap', {});
+        console.log('init', dateMap);
         this.state = {
-            total: 150,
+            total: 150, // total target working hours of the month
+            selectedDate: null,
+            selectedRange: [],
+            dateMap,
+            saving: false,
         };
+        // axios.defaults.withCredentials=true;
+        // axios.defaults.crossDomain=true;
     }
 
-    onSelect = (date) => {
-        console.log(date);
+    componentDidMount() {
+        this.getHolidays();
+    }
+
+    getHolidays = () => {
+        // (async () => {
+        //     // https://www8.cao.go.jp/chosei/shukujitsu/syukujitsu.csv
+        //     const res = await axios.get('/holidays');
+        //     console.log('res', res);
+        // })();
+        // var reader = new FileReader();
+        // reader.onload = function () {
+        //     console.log('reader result', reader.result);
+        // };
+        // // start reading the file. When it is done, calls the onload event defined above.
+        // reader.readAsBinaryString(holidays);
+        console.log('hol', holidays.root.split('\n')[0]);
+    };
+
+
+
+    onSelect = (momentObj) => {
+        const dateStr = momentObj.format(this.dateFormat);
+        this.setState({
+            selectedDate: dateStr,
+        });
     };
 
     onTotalChange = (v) => {
@@ -27,54 +65,113 @@ class App extends React.Component {
     };
 
     getListData = (value) => {
-        let listData;
-        switch (value.date()) {
-            case 8:
-                listData = [
-                    { type: 'warning', content: 'This is warning event.' },
-                    { type: 'success', content: 'This is usual event.' },
-                ];
-                break;
-            case 10:
-                listData = [
-                    { type: 'warning', content: 'This is warning event.' },
-                    { type: 'success', content: 'This is usual event.' },
-                    { type: 'error', content: 'This is error event.' },
-                ];
-                break;
-            case 15:
-                listData = [
-                    { type: 'warning', content: 'This is warning event' },
-                    { type: 'success', content: 'This is very long usual event。。....' },
-                    { type: 'error', content: 'This is error event 1.' },
-                    { type: 'error', content: 'This is error event 2.' },
-                    { type: 'error', content: 'This is error event 3.' },
-                    { type: 'error', content: 'This is error event 4.' },
-                ];
-                break;
-            default:
+        const { dateMap } = this.state;
+        const k = value.format(this.dateFormat);
+        if (dateMap.hasOwnProperty(k)) {
+            return [dateMap[k]];
         }
-        return listData || [];
+        return [];
     };
 
     dateCellRender = (value) => {
         const listData = this.getListData(value);
         return (
             <ul className="events">
-                {listData.map(item => (
-                    <li key={item.content}>
-                        <Badge status={item.type} text={item.content} />
-                    </li>
-                ))}
+                {listData.map(item => {
+                    let text;
+                    if (Array.isArray(item.content)) {
+                        text = item.content.map(m => moment(m).format(this.timeFormat)).join(' ~ ');
+                    } else {
+                        text = item.content;
+                    }
+                    return (
+                        <li key={item.content}>
+                            <Badge status={item.type} text={text} />
+                        </li>
+                    );
+                })}
             </ul>
         );
-    }
+    };
+
+    onFormCancel = () => {
+        this.setState({
+            selectedDate: null,
+        });
+    };
+
+    persistState = () => {
+        const { dateMap } = this.state;
+        db.save('dateMap', dateMap);
+    };
+
+    onFormOk = () => {
+        this.formRef.current.validateFields().then(values => {
+            const { timeRange } = values;
+            if (
+                !timeRange
+                || !Array.isArray(timeRange)
+                || timeRange.length !== 2
+                || timeRange.some(o => !o || !moment.isMoment(o))
+            ) {
+                return message.error('Time range is in wrong format');
+            }
+            this.setState({
+                saving: true,
+            });
+            this.setState(oldState => ({
+               ...oldState,
+               dateMap: {
+                 ...oldState.dateMap,
+                 [oldState.selectedDate]: {
+                     type: 'success',
+                     content: timeRange,
+                 },
+               },
+            }),  () => {
+                this.persistState();
+                this.setState({
+                    saving: false,
+                    selectedDate: null,
+                });
+                message.success('Working Hours Saved!');
+            });
+        }).catch(errorInfo => {
+            console.log('form error', errorInfo);
+        })
+    };
+
+    clearCurrentDate = () => {
+        this.setState({
+            saving: true,
+        });
+        this.setState(oldState => {
+            const oldMap = oldState.dateMap;
+            const newMap = {};
+            const theK = oldState.selectedDate;
+            for (const k in oldMap) {
+                if (oldMap.hasOwnProperty(k)) {
+                    if (theK !== k) {
+                        newMap[k] = oldMap[k];
+                    }
+                }
+            }
+            return {
+                ...oldState,
+                dateMap: newMap,
+            };
+        },  () => {
+            this.persistState();
+            this.setState({
+                saving: false,
+                selectedDate: null,
+            });
+            message.success('Working Hours Cleared!');
+        });
+    };
 
     render() {
-        const { total } = this.state;
-        // <div>Current Total: 69h</div>
-        //                             <div>Remaining: 12days / 81h</div>
-        //                             <p>Daily Estimated Hours: 6.75h (+1h Lunch Break)。</p>
+        const { total, selectedDate, saving, dateMap } = this.state;
         const columns = [
             {
                 title: "Description",
@@ -82,16 +179,51 @@ class App extends React.Component {
                 key: "desc",
             },
             {
-                title: "Result",
+                title: "Result (Calculated)",
                 dataIndex: "result",
                 key: "result",
             },
         ];
+        const now = moment();
+        const nowM = now.month();
+        // console.log('m', nowM  + 1);
+        let totalWorkingSeconds = 0;
+        for (let k in dateMap) {
+            if (dateMap.hasOwnProperty(k)) {
+                if (moment(k).month() === nowM) {
+                    const {type, content} = dateMap[k];
+                    if (type === 'success') {
+                        const [start, end] = content;
+                        const seconds = moment(end).diff(moment(start), 'seconds') - 3600; // Lunch Break 1h
+                        totalWorkingSeconds += seconds;
+                    }
+                }
+            }
+        }
+        const h = (totalWorkingSeconds / 3600).toFixed(2);
+        const totalDesc = `${h}h`; // 69h
+        const lastDate = moment().endOf("month").date();
+        const theDate = moment().date();
+        const remainDays = lastDate - theDate;
+        const remainHours = total - (+h);
+        const remainHoursDesc = remainHours.toFixed(2);
+        const dailyEstimatedHours = (remainHours / remainDays).toFixed(2); // .2f
         const dataSource = [
-            { desc: "Current Total", result: "69h" },
-            { desc: "Remaining", result: "12days / 81h" },
-            { desc: "Daily Estimated Hours", result: "6.75h (+1h Lunch Break)" },
+            { desc: "Current Total", result: totalDesc },
+            { desc: "Remaining", result: `${remainDays}days / ${remainHoursDesc}h` },
+            { desc: "Daily Estimated Hours", result: `${dailyEstimatedHours}h (1h Lunch Break excluded)` },
         ];
+        const showForm = !!selectedDate;
+        const layout = {
+            labelCol: { span: 8 },
+            wrapperCol: { span: 16 },
+        };
+        const modalTitle = (
+            <div>
+                {"Fill in working hours for " + (selectedDate || '')}
+                <a className="clear-time" onClick={this.clearCurrentDate}>clear</a>
+            </div>
+        );
         return (
             <div className="App">
                 <div className="title">Working Hour Calculator</div>
@@ -110,7 +242,9 @@ class App extends React.Component {
                     </div>
                 </div>
                 <div className="result">
-                    <div className="title1">Step3. Results come below</div>
+                    <div className="title1">
+                        Step3. Results come below
+                    </div>
                     <div className="body">
                         <Table
                             size={'small'}
@@ -118,8 +252,8 @@ class App extends React.Component {
                             dataSource={dataSource}
                             pagination={false}
                             style={{ width: '100%' }}
+                            rowKey="desc"
                         />
-
                     </div>
                 </div>
                 <div className="cal">
@@ -132,6 +266,27 @@ class App extends React.Component {
                     </div>
 
                 </div>
+                <Modal
+                    visible={showForm}
+                    title={modalTitle}
+                    onCancel={this.onFormCancel}
+                    width={700}
+                    centered
+                    onOk={this.onFormOk}
+                    confirmLoading={saving}
+                >
+                    <div className="form-container">
+                        <Form {...layout} name="basic" ref={this.formRef}>
+                            <Form.Item
+                                name="timeRange"
+                                label="Check-in & Off Time"
+                                rules={[{ required: true, message: 'Please select time range!' }]}
+                            >
+                                <RangePicker />
+                            </Form.Item>
+                        </Form>
+                    </div>
+                </Modal>
             </div>
         );
     }

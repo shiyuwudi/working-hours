@@ -50,3 +50,7 @@
 .notes-month section {
     font-size: 28px;
 }
+.clear-time {
+    color: red;
+    margin-left: 16px;
+}
