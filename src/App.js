@@ -4,8 +4,7 @@ import 'antd/dist/antd.css';
 import moment from 'moment';
 import {Calendar, InputNumber, Table, Badge, TimePicker, Modal, Form, message} from 'antd';
 import {db} from "./db";
-// import axios from 'axios';
-import holidays from './holiday.json';
+import { saveAs } from 'file-saver';
 
 const { RangePicker } = TimePicker;
 
@@ -18,43 +17,37 @@ class App extends React.Component {
     constructor(props) {
         super(props);
         const dateMap = db.read('dateMap', {});
-        console.log('init', dateMap);
+        const total = +db.read('total', 150);
+        const totalD = +db.read('totalD', 22);
+        // console.log('init', dateMap);
         this.state = {
-            total: 150, // total target working hours of the month
+            total, // total target working hours of the month
+            totalD, //  total working days in month
             selectedDate: null,
             selectedRange: [],
             dateMap,
             saving: false,
         };
-        // axios.defaults.withCredentials=true;
-        // axios.defaults.crossDomain=true;
     }
-
-    componentDidMount() {
-        this.getHolidays();
-    }
-
-    getHolidays = () => {
-        // (async () => {
-        //     // https://www8.cao.go.jp/chosei/shukujitsu/syukujitsu.csv
-        //     const res = await axios.get('/holidays');
-        //     console.log('res', res);
-        // })();
-        // var reader = new FileReader();
-        // reader.onload = function () {
-        //     console.log('reader result', reader.result);
-        // };
-        // // start reading the file. When it is done, calls the onload event defined above.
-        // reader.readAsBinaryString(holidays);
-        console.log('hol', holidays.root.split('\n')[0]);
-    };
-
-
 
     onSelect = (momentObj) => {
         const dateStr = momentObj.format(this.dateFormat);
         this.setState({
             selectedDate: dateStr,
+        }, () => {
+            const form = this.formRef.current;
+            if (!form) return;
+            const { dateMap } = this.state;
+            let dateRange = [];
+            if (dateMap.hasOwnProperty(dateStr)) {
+                const { type, content } = dateMap[dateStr];
+                if (type === 'success' && content && content.length === 2) {
+                    dateRange = content;
+                }
+            }
+            form.setFieldsValue({
+                timeRange: dateRange.map(o => moment(o)),
+            });
         });
     };
 
@@ -62,6 +55,14 @@ class App extends React.Component {
         this.setState({
             total: v,
         });
+        db.save('total', v);
+    };
+
+    onTotalDChange = (v) => {
+        this.setState({
+            totalD: v,
+        });
+        db.save('totalD', v);
     };
 
     getListData = (value) => {
@@ -170,8 +171,76 @@ class App extends React.Component {
         });
     };
 
+    onImport = () => {
+        document.getElementById("image").click();
+    };
+
+    importText = (txt) => {
+        // console.log(moment('03月02日', 'MM月DD日').format('YYYY-MM-DD HH:mm:ss'));
+        const dateMap = txt
+            .split('\n')
+            .filter(o => !!o)
+            .map(lineTxt => {
+                const [datePart, timePart] = lineTxt.split(' ');
+                const key = moment(datePart, 'MM月DD日').format(this.dateFormat);
+                const content = timePart.split('-').map(o => moment(o, 'HHmm'));
+                return {
+                    key,
+                    value: {
+                        type: 'success',
+                        content,
+                    },
+                };
+            }).reduce((r, e) => ({...r, [e.key]: e.value }), {});
+        this.setState({
+            dateMap,
+        });
+        db.save('dateMap', dateMap);
+    };
+
+    onUploadChange = e => {
+      // console.log('on upload change', e.target.files);
+      const files = e.target.files;
+      if (files && files.length > 0) {
+          const file = files[0];
+          // console.log('file is', file);
+          const fileReader = new FileReader();
+          // fileReader
+          fileReader.addEventListener('loadend', ev => {
+              this.importText(fileReader.result);
+              // console.log('loadend', fileReader.result);
+          });
+          fileReader.readAsText(file);
+
+      }
+    };
+
+    onExport = () => {
+        const {dateMap} = this.state;
+        let exportTextStr = '';
+        for (const k in dateMap) {
+            if (dateMap.hasOwnProperty(k)) {
+                const { content, type } = dateMap[k];
+                if (type === 'success' && !!content && Array.isArray(content) && content.length === 2) {
+                    const lineStr = `${moment(k).format('MM月DD日')} ${content.map(o => moment(o).format('HHmm')).join('-')}\n`;
+                    exportTextStr += lineStr;
+                }
+            }
+        }
+        // console.log('export str is ', exportTextStr);
+        this.saveTxt(exportTextStr);
+    };
+
+    saveTxt = (content) => {
+        const filename = "export.txt";
+        const blob = new Blob([content], {
+            type: "text/plain;charset=utf-8"
+        });
+        saveAs(blob, filename);
+    };
+
     render() {
-        const { total, selectedDate, saving, dateMap } = this.state;
+        const { total, selectedDate, saving, dateMap, totalD } = this.state;
         const columns = [
             {
                 title: "Description",
@@ -186,8 +255,8 @@ class App extends React.Component {
         ];
         const now = moment();
         const nowM = now.month();
-        // console.log('m', nowM  + 1);
         let totalWorkingSeconds = 0;
+        let totalWorkingDays = 0;
         for (let k in dateMap) {
             if (dateMap.hasOwnProperty(k)) {
                 if (moment(k).month() === nowM) {
@@ -196,15 +265,14 @@ class App extends React.Component {
                         const [start, end] = content;
                         const seconds = moment(end).diff(moment(start), 'seconds') - 3600; // Lunch Break 1h
                         totalWorkingSeconds += seconds;
+                        totalWorkingDays += 1;
                     }
                 }
             }
         }
         const h = (totalWorkingSeconds / 3600).toFixed(2);
         const totalDesc = `${h}h`; // 69h
-        const lastDate = moment().endOf("month").date();
-        const theDate = moment().date();
-        const remainDays = lastDate - theDate;
+        const remainDays = totalD - totalWorkingDays;
         const remainHours = total - (+h);
         const remainHoursDesc = remainHours.toFixed(2);
         const dailyEstimatedHours = (remainHours / remainDays).toFixed(2); // .2f
@@ -221,7 +289,9 @@ class App extends React.Component {
         const modalTitle = (
             <div>
                 {"Fill in working hours for " + (selectedDate || '')}
-                <a className="clear-time" onClick={this.clearCurrentDate}>clear</a>
+                <a className="clear-time" onClick={this.clearCurrentDate}>
+                    Delete
+                </a>
             </div>
         );
         return (
@@ -240,6 +310,16 @@ class App extends React.Component {
                         <div className="total-suffix">(Default: 150 Hours)</div>
 
                     </div>
+                    <div className="body">
+                        <div className="total-label">Total Working Days In Month</div>
+                        <div>
+                            <InputNumber
+                                value={totalD}
+                                onChange={this.onTotalDChange}
+                            />
+                        </div>
+                        <div className="total-suffix">(Default: 22 Days)</div>
+                    </div>
                 </div>
                 <div className="result">
                     <div className="title1">
@@ -257,7 +337,24 @@ class App extends React.Component {
                     </div>
                 </div>
                 <div className="cal">
-                    <div className="title1">Step2. Click on date cells to take note on daily working hours </div>
+                    <div className="title1">
+                        <div className="cal-header">
+                            <div>Step2. Click on date cells to take note on daily working hours </div>
+                            <div>
+                                <a className="cal-import" onClick={this.onImport}>Import</a>
+                                <input
+                                    type="file"
+                                    id="image"
+                                    name="image"
+                                    style={ { display: 'none' }}
+                                    onChange={this.onUploadChange}
+                                    accept="txt"
+                                />
+                                <a onClick={this.onExport}>Export</a>
+                                {/*<a onClick={this.delAll}>Delete All In This Month</a>*/}
+                            </div>
+                        </div>
+                    </div>
                     <div className="">
                         <Calendar
                             onSelect={this.onSelect}
@@ -267,6 +364,7 @@ class App extends React.Component {
 
                 </div>
                 <Modal
+                    forceRender
                     visible={showForm}
                     title={modalTitle}
                     onCancel={this.onFormCancel}
