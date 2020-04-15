@@ -61,3 +61,21 @@
 .cal-import {
     margin-right: 16px;
 }
+.world-lang-wrapper {
+    display: flex;
+    /*background: red;*/
+}
+.world-lang-button.right {
+    margin-left: 10px;
+}
+
+.world-lang-wrapper .content-area {
+    flex: 1;
+    /*background: blue;*/
+}
+
+.world-lang-wrapper .result {
+    flex: 1;
+    margin-left: 16px;
+    display: flex;
+}
